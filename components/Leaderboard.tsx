@@ -66,7 +66,7 @@ export default function Leaderboard({ currentScore, currentTime, currentSpeed, o
   const handleKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
     // Only allow letters and limit to 3 characters
     const char = e.key.toUpperCase();
-    if (e.key === 'Backspace' || e.key === 'Delete') return;
+    if (e.key === 'Backspace' || e.key === 'Delete' || e.key === 'Tab') return;
     
     if (!/^[A-Z]$/.test(char) || playerName.length >= 3) {
       e.preventDefault();
@@ -99,10 +99,11 @@ export default function Leaderboard({ currentScore, currentTime, currentSpeed, o
                   type="text"
                   value={playerName}
                   onChange={(e) => setPlayerName(e.target.value.toUpperCase())}
-                  onKeyPress={handleKeyPress}
+                  onKeyDown={handleKeyPress}
                   maxLength={3}
                   className="w-full bg-black border-2 border-green-400 text-green-400 text-center text-2xl font-mono p-3 rounded focus:outline-none focus:border-yellow-400"
                   autoFocus
+                  onFocus={(e) => e.target.select()}
                 />
               </div>
               <button

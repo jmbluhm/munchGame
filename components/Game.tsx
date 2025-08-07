@@ -63,6 +63,11 @@ export default function Game({ onGameOver }: GameProps) {
     if (!ctx) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Don't handle game keys if the target is an input field
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+        return;
+      }
+      
       setKeys(prev => ({ ...prev, [e.code]: true }));
       
       if (e.code === 'Space' && !spacePressed) {
@@ -74,6 +79,11 @@ export default function Game({ onGameOver }: GameProps) {
     };
 
     const handleKeyUp = (e: KeyboardEvent) => {
+      // Don't handle game keys if the target is an input field
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+        return;
+      }
+      
       setKeys(prev => ({ ...prev, [e.code]: false }));
       if (e.code === 'Space') {
         setSpacePressed(false);
@@ -202,9 +212,15 @@ export default function Game({ onGameOver }: GameProps) {
   useEffect(() => {
     if (!gameRunning) return;
 
+    let animationId: number;
+    let lastFrameTime = performance.now();
+
     const gameLoop = (timestamp: number) => {
-      const deltaTime = timestamp - lastTime;
-      setLastTime(timestamp);
+      const deltaTime = timestamp - lastFrameTime;
+      lastFrameTime = timestamp;
+      
+      // Cap deltaTime to prevent huge jumps
+      const clampedDeltaTime = Math.min(deltaTime, 50);
       
       // Handle bomb usage
       if (shouldUseBomb) {
@@ -287,7 +303,7 @@ export default function Game({ onGameOver }: GameProps) {
       
       // Update game time
       setGameTime(prev => {
-        const newTime = prev + deltaTime / 1000;
+        const newTime = prev + clampedDeltaTime / 1000;
         
         // Update speed multiplier based on new time
         setPlayer(prevPlayer => ({
@@ -314,7 +330,7 @@ export default function Game({ onGameOver }: GameProps) {
       
       // Move player
       setPlayer(prev => {
-        const newMoveTimer = prev.moveTimer + deltaTime;
+        const newMoveTimer = prev.moveTimer + clampedDeltaTime;
         const moveSpeed = prev.baseSpeed / prev.speedMultiplier;
         
         if (newMoveTimer >= moveSpeed) {
@@ -392,9 +408,9 @@ export default function Game({ onGameOver }: GameProps) {
       setFuelDots(prev => {
         const newDots = prev.map(dot => ({
           ...dot,
-          age: dot.age + deltaTime,
-          animationPhase: dot.animationPhase + deltaTime * 0.003,
-          warningStarted: dot.age + deltaTime > dot.lifetime - 2000 ? true : dot.warningStarted
+          age: dot.age + clampedDeltaTime,
+          animationPhase: dot.animationPhase + clampedDeltaTime * 0.003,
+          warningStarted: dot.age + clampedDeltaTime > dot.lifetime - 2000 ? true : dot.warningStarted
         })).filter(dot => dot.age <= dot.lifetime);
         
         // Add new dots to maintain density
@@ -412,9 +428,9 @@ export default function Game({ onGameOver }: GameProps) {
         
         const newDots = prev.map(dot => ({
           ...dot,
-          age: dot.age + deltaTime,
-          animationPhase: dot.animationPhase + deltaTime * 0.004,
-          warningStarted: dot.age + deltaTime > dot.lifetime - 2000 ? true : dot.warningStarted
+          age: dot.age + clampedDeltaTime,
+          animationPhase: dot.animationPhase + clampedDeltaTime * 0.004,
+          warningStarted: dot.age + clampedDeltaTime > dot.lifetime - 2000 ? true : dot.warningStarted
         })).filter(dot => dot.age <= dot.lifetime);
         
         // Progressive red dot spawning
@@ -429,20 +445,26 @@ export default function Game({ onGameOver }: GameProps) {
       setBombExplosions(prev => {
         const newExplosions = prev.map(explosion => ({
           ...explosion,
-          age: explosion.age + deltaTime,
-          radius: explosion.maxRadius * Math.min(1, (explosion.age + deltaTime) / explosion.duration * 2)
+          age: explosion.age + clampedDeltaTime,
+          radius: explosion.maxRadius * Math.min(1, (explosion.age + clampedDeltaTime) / explosion.duration * 2)
         })).filter(explosion => explosion.age < explosion.duration);
         
         return newExplosions;
       });
       
       if (gameRunning) {
-        requestAnimationFrame(gameLoop);
+        animationId = requestAnimationFrame(gameLoop);
       }
     };
     
-    requestAnimationFrame(gameLoop);
-  }, [gameRunning, lastTime, keys, player, fuelDots, redDots, gameTime, shouldUseBomb, createFuelDot, createRedDot, gameOver, isPositionOccupied]);
+    animationId = requestAnimationFrame(gameLoop);
+    
+    return () => {
+      if (animationId) {
+        cancelAnimationFrame(animationId);
+      }
+    };
+  }, [gameRunning, keys, player, fuelDots, redDots, gameTime, shouldUseBomb, createFuelDot, createRedDot, gameOver, isPositionOccupied]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
