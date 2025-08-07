@@ -1,0 +1,783 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fuel Survival Game</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: #0a0a0a;
+            font-family: 'Courier New', monospace;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            color: #00ff00;
+        }
+
+        .game-container {
+            text-align: center;
+            position: relative;
+        }
+
+        canvas {
+            border: 2px solid #333;
+            background: #111;
+            display: block;
+            margin: 20px auto;
+        }
+
+        .ui {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            width: 800px;
+            margin: 0 auto 20px;
+            padding: 0 20px;
+            box-sizing: border-box;
+        }
+
+        .fuel-display {
+            font-size: 24px;
+            font-weight: bold;
+        }
+
+        .fuel-bar {
+            width: 200px;
+            height: 20px;
+            border: 2px solid #00ff00;
+            background: #000;
+            position: relative;
+            margin-left: 10px;
+        }
+
+        .fuel-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #ff0000, #ffff00, #00ff00);
+            transition: width 0.2s ease;
+        }
+
+        .stats {
+            font-size: 18px;
+        }
+
+        .bomb-display {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 18px;
+        }
+
+        .bomb-slots {
+            display: flex;
+            gap: 5px;
+        }
+
+        .bomb-slot {
+            width: 25px;
+            height: 25px;
+            border: 2px solid #ffaa00;
+            border-radius: 50%;
+            background: #000;
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .bomb-slot.filled {
+            background: radial-gradient(circle, #ffff00, #ffaa00);
+            box-shadow: 0 0 10px #ffaa00;
+        }
+
+        .bomb-slot.filled::after {
+            content: "💣";
+            font-size: 14px;
+        }
+
+        .controls {
+            margin-top: 20px;
+            font-size: 16px;
+            opacity: 0.8;
+        }
+
+        .game-over {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.9);
+            padding: 40px;
+            border: 2px solid #ff0000;
+            border-radius: 10px;
+            display: none;
+        }
+
+        .game-over h2 {
+            color: #ff0000;
+            margin-top: 0;
+        }
+
+        .restart-btn {
+            background: #00ff00;
+            color: #000;
+            border: none;
+            padding: 15px 30px;
+            font-size: 18px;
+            font-family: inherit;
+            cursor: pointer;
+            margin-top: 20px;
+        }
+
+        .restart-btn:hover {
+            background: #00cc00;
+        }
+    </style>
+</head>
+<body>
+    <div class="game-container">
+        <div class="ui">
+            <div style="display: flex; align-items: center;">
+                <span class="fuel-display">FUEL:</span>
+                <div class="fuel-bar">
+                    <div class="fuel-fill" id="fuelFill"></div>
+                </div>
+            </div>
+            <div class="bomb-display">
+                <span>BOMBS:</span>
+                <div class="bomb-slots" id="bombSlots"></div>
+            </div>
+            <div class="stats">
+                <div>Time: <span id="timeDisplay">0</span>s</div>
+                <div>Speed: <span id="speedDisplay">1</span>x</div>
+            </div>
+        </div>
+
+        <canvas id="gameCanvas" width="800" height="600"></canvas>
+
+        <div class="controls">
+            Use WASD or Arrow Keys to navigate • SPACE to use bomb • Green dots add fuel • Red dots drain fuel • Survive as long as possible!
+        </div>
+
+        <div class="game-over" id="gameOver">
+            <h2>Game Over!</h2>
+            <p>You survived <span id="finalTime">0</span> seconds</p>
+            <p>Final speed multiplier: <span id="finalSpeed">1</span>x</p>
+            <button class="restart-btn" onclick="startGame()">Restart Game</button>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        // Game state
+        let gameRunning = false;
+        let gameTime = 0;
+        let lastTime = 0;
+        
+        // Grid settings - smaller grid with more cells
+        const GRID_SIZE = 20;
+        const COLS = Math.floor(canvas.width / GRID_SIZE);
+        const ROWS = Math.floor(canvas.height / GRID_SIZE);
+        
+        // Adjust fuel capacity for smaller grid (more movement)
+        const FUEL_MULTIPLIER = 2; // Since grid is 2x smaller, 2x more moves needed
+        
+        // Player
+        let player = {
+            x: Math.floor(COLS / 2),
+            y: Math.floor(ROWS / 2),
+            fuel: 40, // Adjusted for smaller grid
+            maxFuel: 200, // Adjusted for smaller grid
+            direction: { x: 1, y: 0 },
+            moveTimer: 0,
+            baseSpeed: 300, // Faster starting speed
+            speedMultiplier: 1,
+            bombs: 3, // Start with 3 bombs
+            maxBombs: 5,
+            lastBombEarned: -30000 // Allow earning bomb immediately
+        };
+        
+        // Fuel dots
+        let fuelDots = [];
+        let redDots = [];
+        let bombExplosions = []; // For explosion animations
+        
+        // Input handling
+        let keys = {};
+        let spacePressed = false;
+        
+        // Initialize the game
+        function init() {
+            // Add event listeners
+            document.addEventListener('keydown', (e) => {
+                keys[e.code] = true;
+                
+                // Handle space bar for bombs
+                if (e.code === 'Space' && !spacePressed) {
+                    spacePressed = true;
+                    useBomb();
+                }
+                
+                e.preventDefault();
+            });
+            
+            document.addEventListener('keyup', (e) => {
+                keys[e.code] = false;
+                if (e.code === 'Space') {
+                    spacePressed = false;
+                }
+            });
+            
+            startGame();
+        }
+        
+        function startGame() {
+            gameRunning = true;
+            gameTime = 0;
+            lastTime = 0;
+            
+            // Reset player
+            player = {
+                x: Math.floor(COLS / 2),
+                y: Math.floor(ROWS / 2),
+                fuel: 40,
+                maxFuel: 200,
+                direction: { x: 1, y: 0 },
+                moveTimer: 0,
+                baseSpeed: 300,
+                speedMultiplier: 1,
+                bombs: 3,
+                maxBombs: 5,
+                lastBombEarned: -30000
+            };
+            
+            // Clear explosions
+            bombExplosions = [];
+            
+            // Generate initial dots
+            generateFuelDots();
+            generateRedDots();
+            
+            // Hide game over screen
+            document.getElementById('gameOver').style.display = 'none';
+            
+            // Start game loop
+            gameLoop(0);
+        }
+        
+        function generateFuelDots() {
+            fuelDots = [];
+            
+            // Generate 12-18 fuel dots randomly
+            const numDots = 12 + Math.floor(Math.random() * 7);
+            
+            for (let i = 0; i < numDots; i++) {
+                createFuelDot();
+            }
+        }
+        
+        function generateRedDots() {
+            redDots = [];
+            
+            // Generate 3-6 red dots initially
+            const numDots = 3 + Math.floor(Math.random() * 4);
+            
+            for (let i = 0; i < numDots; i++) {
+                createRedDot();
+            }
+        }
+        
+        function createFuelDot() {
+            let x, y;
+            
+            // Ensure dots don't spawn on player or other dots
+            do {
+                x = Math.floor(Math.random() * COLS);
+                y = Math.floor(Math.random() * ROWS);
+            } while (isPositionOccupied(x, y));
+            
+            // Random fuel value (2-20, adjusted for smaller grid)
+            const fuelValue = 2 + Math.floor(Math.random() * 19);
+            
+            fuelDots.push({
+                x: x,
+                y: y,
+                fuel: fuelValue,
+                size: Math.max(4, fuelValue * 0.8), // Size based on fuel value
+                animationPhase: Math.random() * Math.PI * 2,
+                lifetime: 8000 + Math.random() * 7000, // 8-15 seconds
+                age: 0,
+                warningStarted: false
+            });
+        }
+        
+        function createRedDot() {
+            let x, y;
+            
+            // Ensure dots don't spawn on player or other dots
+            do {
+                x = Math.floor(Math.random() * COLS);
+                y = Math.floor(Math.random() * ROWS);
+            } while (isPositionOccupied(x, y));
+            
+            // Random fuel drain value (3-12)
+            const drainValue = 3 + Math.floor(Math.random() * 10);
+            
+            redDots.push({
+                x: x,
+                y: y,
+                fuel: -drainValue, // Negative for fuel drain
+                size: Math.max(4, drainValue * 0.8),
+                animationPhase: Math.random() * Math.PI * 2,
+                lifetime: 6000 + Math.random() * 6000, // 6-12 seconds
+                age: 0,
+                warningStarted: false
+            });
+        }
+        
+        function isPositionOccupied(x, y) {
+            if (x === player.x && y === player.y) return true;
+            
+            for (let dot of fuelDots) {
+                if (dot.x === x && dot.y === y) return true;
+            }
+            
+            for (let dot of redDots) {
+                if (dot.x === x && dot.y === y) return true;
+            }
+            
+            return false;
+        }
+        
+        function handleInput() {
+            // Check for direction changes
+            if (keys['KeyW'] || keys['ArrowUp']) {
+                player.direction = { x: 0, y: -1 };
+            } else if (keys['KeyS'] || keys['ArrowDown']) {
+                player.direction = { x: 0, y: 1 };
+            } else if (keys['KeyA'] || keys['ArrowLeft']) {
+                player.direction = { x: -1, y: 0 };
+            } else if (keys['KeyD'] || keys['ArrowRight']) {
+                player.direction = { x: 1, y: 0 };
+            }
+        }
+        
+        function update(deltaTime) {
+            if (!gameRunning) return;
+            
+            gameTime += deltaTime / 1000;
+            
+            // Increase speed much more aggressively
+            player.speedMultiplier = 1 + Math.floor(gameTime / 15) * 0.4; // Every 15 seconds, +0.4x speed
+            
+            handleInput();
+            
+            // Update dot animations and lifetimes
+            updateDots(deltaTime);
+            
+            // Update bomb explosions
+            updateExplosions(deltaTime);
+            
+            // Move player
+            player.moveTimer += deltaTime;
+            const moveSpeed = player.baseSpeed / player.speedMultiplier;
+            
+            if (player.moveTimer >= moveSpeed) {
+                player.moveTimer = 0;
+                
+                // Move player
+                player.x += player.direction.x;
+                player.y += player.direction.y;
+                
+                // Wrap around screen
+                if (player.x < 0) player.x = COLS - 1;
+                if (player.x >= COLS) player.x = 0;
+                if (player.y < 0) player.y = ROWS - 1;
+                if (player.y >= ROWS) player.y = 0;
+                
+                // Consume fuel
+                player.fuel--;
+                
+                // Check for fuel dot collection
+                checkDotCollision();
+                
+                // Check game over
+                if (player.fuel <= 0) {
+                    gameOver();
+                }
+            }
+            
+            updateUI();
+        }
+        
+        function updateDots(deltaTime) {
+            // Calculate progression-based red dot difficulty (more aggressive)
+            const progressionMultiplier = 1 + Math.floor(gameTime / 15) * 0.6; // Faster red dot escalation
+            const redDotSpawnChance = Math.min(0.003, 0.0008 * progressionMultiplier); // Higher spawn rates
+            const maxRedDots = Math.min(15, 4 + Math.floor(gameTime / 20)); // More red dots, faster
+            
+            // Update fuel dots
+            for (let i = fuelDots.length - 1; i >= 0; i--) {
+                const dot = fuelDots[i];
+                dot.age += deltaTime;
+                dot.animationPhase += deltaTime * 0.003;
+                
+                // Start warning animation when 2 seconds left
+                if (dot.age > dot.lifetime - 2000 && !dot.warningStarted) {
+                    dot.warningStarted = true;
+                }
+                
+                // Remove expired dots
+                if (dot.age > dot.lifetime) {
+                    fuelDots.splice(i, 1);
+                    // Create a new one to maintain density
+                    createFuelDot();
+                }
+            }
+            
+            // Update red dots
+            for (let i = redDots.length - 1; i >= 0; i--) {
+                const dot = redDots[i];
+                dot.age += deltaTime;
+                dot.animationPhase += deltaTime * 0.004;
+                
+                // Start warning animation when 2 seconds left
+                if (dot.age > dot.lifetime - 2000 && !dot.warningStarted) {
+                    dot.warningStarted = true;
+                }
+                
+                // Remove expired dots
+                if (dot.age > dot.lifetime) {
+                    redDots.splice(i, 1);
+                    // Higher chance to create a new one based on progression
+                    const replacementChance = Math.min(0.95, 0.7 + (progressionMultiplier - 1) * 0.1);
+                    if (Math.random() < replacementChance) {
+                        createRedDot();
+                    }
+                }
+            }
+            
+            // Occasionally spawn new dots
+            if (Math.random() < 0.001) { // Low chance per frame
+                if (fuelDots.length < 20) createFuelDot();
+            }
+            
+            // Progressive red dot spawning - gets more frequent as game progresses
+            if (Math.random() < redDotSpawnChance && redDots.length < maxRedDots) {
+                createRedDot();
+            }
+        }
+        
+        function checkDotCollision() {
+            // Check fuel dots
+            for (let i = fuelDots.length - 1; i >= 0; i--) {
+                const dot = fuelDots[i];
+                if (dot.x === player.x && dot.y === player.y) {
+                    const oldFuel = player.fuel;
+                    player.fuel = Math.min(player.maxFuel, player.fuel + dot.fuel);
+                    
+                    // Check if we hit max fuel and can earn a bomb
+                    if (player.fuel === player.maxFuel && oldFuel < player.maxFuel) {
+                        earnBomb();
+                    }
+                    
+                    fuelDots.splice(i, 1);
+                    // Create a new one
+                    createFuelDot();
+                }
+            }
+            
+            // Check red dots
+            for (let i = redDots.length - 1; i >= 0; i--) {
+                const dot = redDots[i];
+                if (dot.x === player.x && dot.y === player.y) {
+                    player.fuel = Math.max(0, player.fuel + dot.fuel); // dot.fuel is negative
+                    redDots.splice(i, 1);
+                    // Higher chance to create a new one based on progression
+                    const progressionMultiplier = 1 + Math.floor(gameTime / 15) * 0.6;
+                    const replacementChance = Math.min(0.95, 0.8 + (progressionMultiplier - 1) * 0.05);
+                    if (Math.random() < replacementChance) {
+                        createRedDot();
+                    }
+                }
+            }
+        }
+        
+        function earnBomb() {
+            const currentTime = Date.now();
+            
+            // Check if we have empty bomb slots and enough time has passed
+            if (player.bombs < player.maxBombs && 
+                currentTime - player.lastBombEarned >= 30000) {
+                player.bombs++;
+                player.lastBombEarned = currentTime;
+            }
+        }
+        
+        function useBomb() {
+            if (player.bombs <= 0) return;
+            
+            player.bombs--;
+            
+            // Create explosion animation
+            bombExplosions.push({
+                x: player.x,
+                y: player.y,
+                radius: 0,
+                maxRadius: 8, // Blast radius in grid cells
+                age: 0,
+                duration: 800 // Animation duration in ms
+            });
+            
+            // Calculate net fuel from all dots within blast radius
+            let netFuel = 0;
+            const blastRadius = 8;
+            
+            // Check fuel dots
+            for (let i = fuelDots.length - 1; i >= 0; i--) {
+                const dot = fuelDots[i];
+                const distance = Math.sqrt(
+                    Math.pow(dot.x - player.x, 2) + 
+                    Math.pow(dot.y - player.y, 2)
+                );
+                
+                if (distance <= blastRadius) {
+                    netFuel += dot.fuel;
+                    fuelDots.splice(i, 1);
+                    // Replace destroyed fuel dot
+                    createFuelDot();
+                }
+            }
+            
+            // Check red dots
+            for (let i = redDots.length - 1; i >= 0; i--) {
+                const dot = redDots[i];
+                const distance = Math.sqrt(
+                    Math.pow(dot.x - player.x, 2) + 
+                    Math.pow(dot.y - player.y, 2)
+                );
+                
+                if (distance <= blastRadius) {
+                    netFuel += dot.fuel; // This is negative, so it reduces net fuel
+                    redDots.splice(i, 1);
+                    // Maybe replace destroyed red dot
+                    const progressionMultiplier = 1 + Math.floor(gameTime / 15) * 0.6;
+                    const replacementChance = Math.min(0.95, 0.8 + (progressionMultiplier - 1) * 0.05);
+                    if (Math.random() < replacementChance) {
+                        createRedDot();
+                    }
+                }
+            }
+            
+            // Apply net fuel change
+            const oldFuel = player.fuel;
+            player.fuel = Math.max(0, Math.min(player.maxFuel, player.fuel + netFuel));
+            
+            // Check if we hit max fuel and can earn a bomb
+            if (player.fuel === player.maxFuel && oldFuel < player.maxFuel) {
+                earnBomb();
+            }
+        }
+        
+        function updateExplosions(deltaTime) {
+            for (let i = bombExplosions.length - 1; i >= 0; i--) {
+                const explosion = bombExplosions[i];
+                explosion.age += deltaTime;
+                
+                // Expand radius over time
+                const progress = explosion.age / explosion.duration;
+                explosion.radius = explosion.maxRadius * Math.min(1, progress * 2); // Expands in first half
+                
+                // Remove completed explosions
+                if (explosion.age >= explosion.duration) {
+                    bombExplosions.splice(i, 1);
+                }
+            }
+        }
+        
+        function render() {
+            // Clear canvas
+            ctx.fillStyle = '#111';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Draw grid (more subtle for smaller grid)
+            ctx.strokeStyle = '#1a1a1a';
+            ctx.lineWidth = 0.5;
+            for (let x = 0; x <= COLS; x++) {
+                ctx.beginPath();
+                ctx.moveTo(x * GRID_SIZE, 0);
+                ctx.lineTo(x * GRID_SIZE, canvas.height);
+                ctx.stroke();
+            }
+            for (let y = 0; y <= ROWS; y++) {
+                ctx.beginPath();
+                ctx.moveTo(0, y * GRID_SIZE);
+                ctx.lineTo(canvas.width, y * GRID_SIZE);
+                ctx.stroke();
+            }
+            
+            // Draw fuel dots
+            fuelDots.forEach(dot => {
+                drawAnimatedDot(dot, '#00ff00', '#00aa00');
+            });
+            
+            // Draw red dots
+            redDots.forEach(dot => {
+                drawAnimatedDot(dot, '#ff0000', '#aa0000');
+            });
+            
+            // Draw bomb explosions
+            bombExplosions.forEach(explosion => {
+                drawExplosion(explosion);
+            });
+            
+            // Draw player
+            const playerCenterX = player.x * GRID_SIZE + GRID_SIZE / 2;
+            const playerCenterY = player.y * GRID_SIZE + GRID_SIZE / 2;
+            
+            // Player glow
+            const playerGradient = ctx.createRadialGradient(playerCenterX, playerCenterY, 0, playerCenterX, playerCenterY, 15);
+            playerGradient.addColorStop(0, '#ffffff');
+            playerGradient.addColorStop(0.7, '#aaaaaa');
+            playerGradient.addColorStop(1, 'transparent');
+            
+            ctx.fillStyle = playerGradient;
+            ctx.beginPath();
+            ctx.arc(playerCenterX, playerCenterY, 15, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Player core
+            ctx.fillStyle = '#ffffff';
+            ctx.beginPath();
+            ctx.arc(playerCenterX, playerCenterY, 6, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Direction indicator
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(playerCenterX, playerCenterY);
+            ctx.lineTo(
+                playerCenterX + player.direction.x * 10,
+                playerCenterY + player.direction.y * 10
+            );
+            ctx.stroke();
+        }
+        
+        function drawAnimatedDot(dot, color, darkerColor) {
+            const centerX = dot.x * GRID_SIZE + GRID_SIZE / 2;
+            const centerY = dot.y * GRID_SIZE + GRID_SIZE / 2;
+            
+            // Pulsing animation
+            const pulseScale = 1 + Math.sin(dot.animationPhase) * 0.3;
+            const currentSize = dot.size * pulseScale;
+            
+            // Warning animation (blinking when about to disappear)
+            let alpha = 1;
+            if (dot.warningStarted) {
+                alpha = 0.3 + 0.7 * (Math.sin(dot.animationPhase * 3) + 1) / 2;
+            }
+            
+            // Glow effect
+            const gradient = ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, currentSize * 2);
+            gradient.addColorStop(0, color + Math.floor(alpha * 255).toString(16).padStart(2, '0'));
+            gradient.addColorStop(0.7, darkerColor + Math.floor(alpha * 170).toString(16).padStart(2, '0'));
+            gradient.addColorStop(1, 'transparent');
+            
+            ctx.fillStyle = gradient;
+            ctx.beginPath();
+            ctx.arc(centerX, centerY, currentSize * 2, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Core dot with rotation animation
+            ctx.save();
+            ctx.translate(centerX, centerY);
+            ctx.rotate(dot.animationPhase * 0.5);
+            
+            // Create a slightly star-like shape for more visual interest
+            ctx.fillStyle = color;
+            ctx.globalAlpha = alpha;
+            ctx.beginPath();
+            for (let i = 0; i < 6; i++) {
+                const angle = (i / 6) * Math.PI * 2;
+                const radius = i % 2 === 0 ? currentSize : currentSize * 0.7;
+                const x = Math.cos(angle) * radius;
+                const y = Math.sin(angle) * radius;
+                if (i === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            }
+            ctx.closePath();
+            ctx.fill();
+            
+            ctx.restore();
+        }
+        
+        function drawExplosion(explosion) {
+            const centerX = explosion.x * GRID_SIZE + GRID_SIZE / 2;
+            const centerY = explosion.y * GRID_SIZE + GRID_SIZE / 2;
+            
+            const progress = explosion.age / explosion.duration;
+            const alpha = Math.max(0, 1 - progress); // Fade out over time
+            
+            // Single white circle border expanding outward
+            const radius = explosion.radius * GRID_SIZE;
+            
+            ctx.strokeStyle = `rgba(255, 255, 255, ${alpha})`;
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+            ctx.stroke();
+        }
+        
+        function updateUI() {
+            // Update fuel bar
+            const fuelPercentage = (player.fuel / player.maxFuel) * 100;
+            document.getElementById('fuelFill').style.width = fuelPercentage + '%';
+            
+            // Update bomb display
+            const bombSlots = document.getElementById('bombSlots');
+            bombSlots.innerHTML = '';
+            for (let i = 0; i < player.maxBombs; i++) {
+                const slot = document.createElement('div');
+                slot.className = 'bomb-slot';
+                if (i < player.bombs) {
+                    slot.classList.add('filled');
+                }
+                bombSlots.appendChild(slot);
+            }
+            
+            // Update displays
+            document.getElementById('timeDisplay').textContent = Math.floor(gameTime);
+            document.getElementById('speedDisplay').textContent = player.speedMultiplier.toFixed(1);
+        }
+        
+        function gameOver() {
+            gameRunning = false;
+            
+            // Show game over screen
+            document.getElementById('finalTime').textContent = Math.floor(gameTime);
+            document.getElementById('finalSpeed').textContent = player.speedMultiplier.toFixed(1);
+            document.getElementById('gameOver').style.display = 'block';
+        }
+        
+        function gameLoop(timestamp) {
+            const deltaTime = timestamp - lastTime;
+            lastTime = timestamp;
+            
+            update(deltaTime);
+            render();
+            
+            if (gameRunning) {
+                requestAnimationFrame(gameLoop);
+            }
+        }
+        
+        // Start the game
+        init();
+    </script>
+</body>
+</html>
