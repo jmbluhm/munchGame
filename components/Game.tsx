@@ -301,11 +301,11 @@ export default function Game({ onGameOver }: GameProps) {
         });
       }
       
-      // Update game time
+      // Update game time (real time, not move-based)
       setGameTime(prev => {
         const newTime = prev + clampedDeltaTime / 1000;
         
-        // Update speed multiplier based on new time
+        // Update speed multiplier based on real time
         setPlayer(prevPlayer => ({
           ...prevPlayer,
           speedMultiplier: 1 + Math.floor(newTime / 15) * 0.4
@@ -334,6 +334,7 @@ export default function Game({ onGameOver }: GameProps) {
         const moveSpeed = prev.baseSpeed / prev.speedMultiplier;
         
         if (newMoveTimer >= moveSpeed) {
+          
           let newX = prev.x + prev.direction.x;
           let newY = prev.y + prev.direction.y;
           
