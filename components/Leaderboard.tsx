@@ -14,7 +14,7 @@ interface LeaderboardProps {
   currentTime: number;
   currentSpeed: number;
   onClose: () => void;
-  onSubmitScore: (name: string, score: number, time: number, speed: number) => void;
+  onSubmitScore: (name: string, score: number, time: number, speed: number) => Promise<{ success: boolean; error?: string }>;
 }
 
 export default function Leaderboard({ currentScore, currentTime, currentSpeed, onClose, onSubmitScore }: LeaderboardProps) {
@@ -53,13 +53,26 @@ export default function Leaderboard({ currentScore, currentTime, currentSpeed, o
     }
   }, [currentScore, leaderboard, checkIfInTopTen]);
 
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+
   const handleNameSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (playerName.trim().length === 3) {
-      await onSubmitScore(playerName.toUpperCase(), currentScore, currentTime, currentSpeed);
-      setShowNameInput(false);
-      setPlayerName('');
-      await fetchLeaderboard();
+      setIsSubmitting(true);
+      setSubmitError(null);
+      
+      const result = await onSubmitScore(playerName.toUpperCase(), currentScore, currentTime, currentSpeed);
+      
+      if (result?.success) {
+        setShowNameInput(false);
+        setPlayerName('');
+        await fetchLeaderboard();
+      } else {
+        setSubmitError(result?.error || 'Failed to submit score. Please try again.');
+      }
+      
+      setIsSubmitting(false);
     }
   };
 
@@ -106,12 +119,17 @@ export default function Leaderboard({ currentScore, currentTime, currentSpeed, o
                   onFocus={(e) => e.target.select()}
                 />
               </div>
+              {submitError && (
+                <div className="text-red-400 text-sm text-center mb-2">
+                  {submitError}
+                </div>
+              )}
               <button
                 type="submit"
-                disabled={playerName.length !== 3}
+                disabled={playerName.length !== 3 || isSubmitting}
                 className="w-full bg-green-400 text-black font-bold py-3 px-6 rounded hover:bg-green-300 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                SUBMIT SCORE
+                {isSubmitting ? 'SUBMITTING...' : 'SUBMIT SCORE'}
               </button>
             </form>
           </div>

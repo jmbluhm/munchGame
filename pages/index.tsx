@@ -26,10 +26,17 @@ export default function Home() {
       });
       
       if (!response.ok) {
-        throw new Error('Failed to submit score');
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `HTTP ${response.status}: Failed to submit score`);
       }
+      
+      return { success: true };
     } catch (error) {
       console.error('Error submitting score:', error);
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Unknown error occurred' 
+      };
     }
   };
 
