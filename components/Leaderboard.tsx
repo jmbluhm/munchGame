@@ -3,10 +3,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
 
 interface LeaderboardEntry {
+  id: number;
   name: string;
   score: number;
   time: number;
   speed: number;
+  timestamp: number;
+  created_at: string;
 }
 
 interface LeaderboardProps {
