@@ -1,5 +1,5 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { supabase, LeaderboardEntry } from '../../utils/supabase';
+import { createServerSupabaseClient, LeaderboardEntry } from '../../utils/supabase';
 
 export default async function handler(
   req: NextApiRequest,
@@ -7,6 +7,8 @@ export default async function handler(
 ) {
   if (req.method === 'GET') {
     try {
+      const supabase = createServerSupabaseClient();
+      
       // Fetch leaderboard from Supabase, ordered by score descending, limit 10
       const { data: leaderboard, error } = await supabase
         .from('leaderboard')
@@ -37,6 +39,8 @@ export default async function handler(
       if (name.length !== 3 || !/^[A-Z]{3}$/.test(name)) {
         return res.status(400).json({ error: 'Name must be exactly 3 uppercase letters' });
       }
+      
+      const supabase = createServerSupabaseClient();
       
       // Add new entry to Supabase
       const { data: newEntry, error: insertError } = await supabase
