@@ -17,12 +17,14 @@ interface LeaderboardProps {
   currentTime: number;
   currentSpeed: number;
   onClose: () => void;
+  onNewGame: () => void;
   onSubmitScore: (name: string, score: number, time: number, speed: number) => Promise<{ success: boolean; error?: string }>;
 }
 
-export default function Leaderboard({ currentScore, currentTime, currentSpeed, onClose, onSubmitScore }: LeaderboardProps) {
+export default function Leaderboard({ currentScore, currentTime, currentSpeed, onClose, onNewGame, onSubmitScore }: LeaderboardProps) {
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [showNameInput, setShowNameInput] = useState(false);
+  const [showLeaderboard, setShowLeaderboard] = useState(false);
   const [playerName, setPlayerName] = useState('');
   const [isInTopTen, setIsInTopTen] = useState(false);
 
@@ -41,10 +43,12 @@ export default function Leaderboard({ currentScore, currentTime, currentSpeed, o
     const isTopTen = sortedLeaderboard.length < 10 || currentScore > sortedLeaderboard[9]?.score;
     setIsInTopTen(isTopTen);
     
-    if (isTopTen) {
+    if (isTopTen && !showLeaderboard) {
       setShowNameInput(true);
+    } else if (!isTopTen) {
+      setShowLeaderboard(true);
     }
-  }, [leaderboard, currentScore]);
+  }, [leaderboard, currentScore, showLeaderboard]);
 
   useEffect(() => {
     fetchLeaderboard();
@@ -69,6 +73,7 @@ export default function Leaderboard({ currentScore, currentTime, currentSpeed, o
       
       if (result?.success) {
         setShowNameInput(false);
+        setShowLeaderboard(true);
         setPlayerName('');
         await fetchLeaderboard();
       } else {
@@ -98,7 +103,7 @@ export default function Leaderboard({ currentScore, currentTime, currentSpeed, o
           🏆 LEADERBOARD 🏆
         </h2>
         
-        {showNameInput && isInTopTen ? (
+        {showNameInput && isInTopTen && !showLeaderboard ? (
           <div className="text-center">
             <p className="text-green-400 text-lg mb-4">
               NEW HIGH SCORE!
@@ -136,7 +141,7 @@ export default function Leaderboard({ currentScore, currentTime, currentSpeed, o
               </button>
             </form>
           </div>
-        ) : (
+        ) : (showLeaderboard || !isInTopTen) ? (
           <div className="space-y-4">
             <div className="text-center mb-4">
               <p className="text-white text-sm">
@@ -180,14 +185,22 @@ export default function Leaderboard({ currentScore, currentTime, currentSpeed, o
               )}
             </div>
             
-            <button
-              onClick={onClose}
-              className="w-full bg-green-400 text-black font-bold py-3 px-6 rounded hover:bg-green-300"
-            >
-              PLAY AGAIN
-            </button>
+            <div className="flex space-x-2">
+              <button
+                onClick={onClose}
+                className="flex-1 bg-gray-600 text-white font-bold py-3 px-6 rounded hover:bg-gray-500"
+              >
+                CLOSE
+              </button>
+              <button
+                onClick={onNewGame}
+                className="flex-1 bg-green-400 text-black font-bold py-3 px-6 rounded hover:bg-green-300"
+              >
+                START NEW GAME
+              </button>
+            </div>
           </div>
-        )}
+        ) : null}
       </div>
     </div>
   );

@@ -45,6 +45,15 @@ export default function Home() {
     setCurrentScore(0);
   };
 
+  const handleNewGame = () => {
+    setShowLeaderboard(false);
+    setCurrentScore(0);
+    setCurrentTime(0);
+    setCurrentSpeed(1);
+    // Force a re-render of the Game component by using a key
+    window.location.reload();
+  };
+
   return (
     <div className="min-h-screen bg-gray-900 text-green-400 font-mono">
       <div className="container mx-auto px-4 py-8">
@@ -61,6 +70,7 @@ export default function Home() {
              currentTime={currentTime}
              currentSpeed={currentSpeed}
              onClose={handleCloseLeaderboard}
+             onNewGame={handleNewGame}
              onSubmitScore={handleSubmitScore}
            />
          )}
