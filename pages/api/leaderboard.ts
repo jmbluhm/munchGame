@@ -1,4 +1,3 @@
-import { kv } from '@vercel/kv';
 import type { NextApiRequest, NextApiResponse } from 'next';
 
 interface LeaderboardEntry {
@@ -9,8 +8,9 @@ interface LeaderboardEntry {
   timestamp: number;
 }
 
-// Fallback in-memory storage for development/testing
-let fallbackLeaderboard: LeaderboardEntry[] = [];
+// In-memory storage (will reset on server restart)
+// In production, you'd want to use a proper database
+let leaderboard: LeaderboardEntry[] = [];
 
 export default async function handler(
   req: NextApiRequest,
@@ -18,10 +18,6 @@ export default async function handler(
 ) {
   if (req.method === 'GET') {
     try {
-      // Get leaderboard from KV storage
-      const leaderboardData = await kv.get('leaderboard');
-      const leaderboard: LeaderboardEntry[] = leaderboardData ? JSON.parse(leaderboardData as string) : [];
-      
       // Sort by score (highest first) and return top 10
       const sortedLeaderboard = leaderboard
         .sort((a, b) => b.score - a.score)
@@ -29,12 +25,8 @@ export default async function handler(
       
       res.status(200).json({ leaderboard: sortedLeaderboard });
     } catch (error) {
-      console.error('Error fetching leaderboard from KV, using fallback:', error);
-      // Use fallback storage if KV is not available
-      const sortedLeaderboard = fallbackLeaderboard
-        .sort((a, b) => b.score - a.score)
-        .slice(0, 10);
-      res.status(200).json({ leaderboard: sortedLeaderboard });
+      console.error('Error fetching leaderboard:', error);
+      res.status(200).json({ leaderboard: [] });
     }
   } else if (req.method === 'POST') {
     try {
@@ -59,10 +51,7 @@ export default async function handler(
       };
       
       try {
-        // Try to use KV storage first
-        const leaderboardData = await kv.get('leaderboard');
-        const leaderboard: LeaderboardEntry[] = leaderboardData ? JSON.parse(leaderboardData as string) : [];
-        
+        // Add new entry to leaderboard
         leaderboard.push(newEntry);
         
         // Sort by score and keep only top 100 entries to prevent unlimited growth
@@ -70,27 +59,18 @@ export default async function handler(
           .sort((a, b) => b.score - a.score)
           .slice(0, 100);
         
-        // Save back to KV storage
-        await kv.set('leaderboard', JSON.stringify(sortedLeaderboard));
+        // Update the leaderboard array
+        leaderboard = sortedLeaderboard;
         
         res.status(200).json({ 
           success: true, 
-          leaderboard: sortedLeaderboard.slice(0, 10) 
+          leaderboard: sortedLeaderboard.slice(0, 10)
         });
-      } catch (kvError) {
-        console.error('KV storage failed, using fallback:', kvError);
-        
-        // Fallback to in-memory storage
-        fallbackLeaderboard.push(newEntry);
-        const sortedFallback = fallbackLeaderboard
-          .sort((a, b) => b.score - a.score)
-          .slice(0, 100);
-        fallbackLeaderboard = sortedFallback;
-        
-        res.status(200).json({ 
-          success: true, 
-          leaderboard: sortedFallback.slice(0, 10),
-          note: 'Using fallback storage (scores will reset on server restart)'
+      } catch (error) {
+        console.error('Error adding score to leaderboard:', error);
+        res.status(500).json({ 
+          error: 'Failed to add score to leaderboard',
+          details: error instanceof Error ? error.message : 'Unknown error'
         });
       }
     } catch (error) {
